@@ -23,6 +23,7 @@ defmodule Jido.AI.Reasoning.Helpers do
 
   """
 
+  alias Jido.Action.Result
   alias Jido.Agent.StateOp
   alias Jido.Agent.StateOps
   alias Jido.Agent
@@ -538,6 +539,12 @@ defmodule Jido.AI.Reasoning.Helpers do
 
   @spec run_instruction(Jido.Instruction.t()) :: term()
   defp run_instruction(%Jido.Instruction{} = instruction), do: :erlang.apply(Jido.Exec, :run, [instruction])
+
+  defp apply_instruction_result({:ok, %Result{data: data, effects: effects}}, %Agent{} = agent)
+       when is_map(data) do
+    agent = StateOps.apply_result(agent, data)
+    StateOps.apply_state_ops(agent, List.wrap(effects))
+  end
 
   defp apply_instruction_result({:ok, result}, %Agent{} = agent) when is_map(result) do
     {StateOps.apply_result(agent, result), []}

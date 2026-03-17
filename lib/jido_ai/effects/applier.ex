@@ -3,6 +3,7 @@ defmodule Jido.AI.Effects.Applier do
   Shared helpers to normalize, filter, and apply effectful tool results.
   """
 
+  alias Jido.Action.Result
   alias Jido.AI.Effects.Policy
   alias Jido.Agent
   alias Jido.Agent.StateOps
@@ -20,8 +21,14 @@ defmodule Jido.AI.Effects.Applier do
 
   @doc """
   Normalizes a result envelope to canonical `{:ok|:error, value, effects}` shape.
+
+  When the input is `{:ok, %Jido.Action.Result{}}`, the struct is preserved as
+  the payload and its `effects` are extracted into the third element.
   """
   @spec normalize_result(term()) :: result_tuple()
+  def normalize_result({:ok, %Result{effects: effects} = result}),
+    do: {:ok, result, List.wrap(effects)}
+
   def normalize_result({:ok, result, effects}), do: {:ok, result, List.wrap(effects)}
   def normalize_result({:ok, result}), do: {:ok, result, []}
   def normalize_result({:error, reason, effects}), do: {:error, reason, List.wrap(effects)}

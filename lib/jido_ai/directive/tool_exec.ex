@@ -95,6 +95,7 @@ defimpl Jido.AgentServer.DirectiveExec, for: Jido.AI.Directive.ToolExec do
   This prevents the Machine from deadlocking in `awaiting_tool` state.
   """
 
+  alias Jido.Action.Result
   alias Jido.AI.Observe
   alias Jido.AI.Signal
   alias Jido.AI.Turn
@@ -354,6 +355,9 @@ defimpl Jido.AgentServer.DirectiveExec, for: Jido.AI.Directive.ToolExec do
          ), []}
     end
   end
+
+  defp normalize_result({:ok, %Result{effects: effects} = result}, _tool_name),
+    do: {:ok, result, List.wrap(effects)}
 
   defp normalize_result({:ok, result, effects}, _tool_name), do: {:ok, result, List.wrap(effects)}
   defp normalize_result({:ok, result}, _tool_name), do: {:ok, result, []}

@@ -13,7 +13,9 @@ defmodule Jido.AI.Turn do
   """
 
   alias Jido.AI.{Effects, Observe, ToolAdapter}
+  alias Jido.Action.ContentPart
   alias Jido.Action.Error.TimeoutError
+  alias Jido.Action.Result
   alias Jido.Action.Tool, as: ActionTool
   alias ReqLLM.Context
 
@@ -326,9 +328,24 @@ defmodule Jido.AI.Turn do
   end
 
   @doc """
-  Formats a raw tool execution result to string content suitable for tool messages.
+  Formats a raw tool execution result to content suitable for tool messages.
+
+  When the result is `{:ok, %Jido.Action.Result{content: [_|_]}}`, each
+  `Jido.Action.ContentPart` is converted to a `ReqLLM.Message.ContentPart` and
+  returned as a list (multimodal tool result). When `content` is empty or the
+  result is a plain map, the data is serialized as a string.
   """
-  @spec format_tool_result_content(execute_result() | {:ok, term()} | {:error, term()}) :: String.t()
+  @spec format_tool_result_content(execute_result() | {:ok, term()} | {:error, term()}) ::
+          String.t() | [ReqLLM.Message.ContentPart.t()]
+
+  def format_tool_result_content({:ok, %Result{content: content}}) when content != [] do
+    Enum.map(content, &to_req_content_part/1)
+  end
+
+  def format_tool_result_content({:ok, %Result{data: data}}) do
+    format_tool_result_content({:ok, data})
+  end
+
   def format_tool_result_content({:ok, result, _effects}), do: format_tool_result_content({:ok, result})
   def format_tool_result_content({:error, error, _effects}), do: format_tool_result_content({:error, error})
 
@@ -492,6 +509,9 @@ defmodule Jido.AI.Turn do
 
     result =
       case Jido.Exec.run(module, normalized_params, context, run_opts) do
+        {:ok, %Result{effects: effects} = result} ->
+          {:ok, result, List.wrap(effects)}
+
         {:ok, output} ->
           {:ok, output, []}
 
@@ -801,4 +821,16 @@ defmodule Jido.AI.Turn do
   end
 
   defp normalize_tool_arguments(_), do: %{}
+
+  defp to_req_content_part(%ContentPart{} = cp) do
+    %ReqLLM.Message.ContentPart{
+      type: cp.type,
+      text: cp.text,
+      url: cp.url,
+      data: cp.data,
+      media_type: cp.media_type,
+      filename: cp.filename,
+      metadata: cp.metadata
+    }
+  end
 end

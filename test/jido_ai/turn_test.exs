@@ -155,6 +155,97 @@ defmodule Jido.AI.TurnTest do
     end
   end
 
+  describe "format_tool_result_content with %Result{}" do
+    alias Jido.Action.{Result, ContentPart}
+
+    test "returns content parts when Result has non-empty content" do
+      result =
+        {:ok,
+         %Result{
+           data: %{exit_code: 0},
+           content: [ContentPart.text("Image loaded"), ContentPart.image(<<1, 2>>, "image/png")]
+         }}
+
+      content = Turn.format_tool_result_content(result)
+      assert is_list(content)
+      assert length(content) == 2
+
+      assert [
+               %ReqLLM.Message.ContentPart{type: :text, text: "Image loaded"},
+               %ReqLLM.Message.ContentPart{type: :image, data: <<1, 2>>, media_type: "image/png"}
+             ] = content
+    end
+
+    test "falls back to JSON-encoded data when content is empty" do
+      result = {:ok, %Result{data: %{exit_code: 0, stdout: "ok"}, content: []}}
+      content = Turn.format_tool_result_content(result)
+      assert is_binary(content)
+      assert content =~ "exit_code"
+    end
+  end
+
+  describe "format_tool_result_content with 3-tuple %Result{}" do
+    alias Jido.Action.{Result, ContentPart}
+
+    test "3-tuple {:ok, %Result{content: [...]}, effects} returns content parts" do
+      result = {:ok, %Result{data: %{x: 1}, content: [ContentPart.text("hi")]}, [:eff]}
+      content = Turn.format_tool_result_content(result)
+      assert [%ReqLLM.Message.ContentPart{type: :text, text: "hi"}] = content
+    end
+
+    test "3-tuple {:ok, %Result{content: []}, effects} falls back to data" do
+      result = {:ok, %Result{data: %{x: 1}, content: []}, [:eff]}
+      content = Turn.format_tool_result_content(result)
+      assert is_binary(content)
+      assert content =~ "x"
+    end
+  end
+
+  describe "run_tools/3 with %Result{}" do
+    alias Jido.Action.{Result, ContentPart}
+
+    defmodule ImageAction do
+      use Jido.Action,
+        name: "image_viewer",
+        description: "Returns an image via Result",
+        schema: Zoi.object(%{path: Zoi.string()})
+
+      def run(_params, _context) do
+        {:ok,
+         %Result{
+           data: %{stdout: "Image loaded"},
+           content: [ContentPart.image(<<0xFF, 0xD8>>, "image/jpeg")]
+         }}
+      end
+    end
+
+    @tag capture_log: true
+    test "action returning %Result{} with content produces multimodal tool result" do
+      turn = %Turn{
+        type: :tool_calls,
+        text: "",
+        tool_calls: [
+          %{id: "tc_img", name: "image_viewer", arguments: %{"path" => "/test.jpg"}}
+        ]
+      }
+
+      context = %{tools: %{ImageAction.name() => ImageAction}}
+
+      assert {:ok, updated_turn} = Turn.run_tools(turn, context, timeout: 5000)
+      assert length(updated_turn.tool_results) == 1
+
+      [tool_result] = updated_turn.tool_results
+      assert tool_result.id == "tc_img"
+      assert tool_result.name == "image_viewer"
+
+      # Content should be a list of ReqLLM ContentParts, not a string
+      assert is_list(tool_result.content), "Expected list of ContentParts, got: #{inspect(tool_result.content)}"
+
+      assert [%ReqLLM.Message.ContentPart{type: :image, data: <<0xFF, 0xD8>>, media_type: "image/jpeg"}] =
+               tool_result.content
+    end
+  end
+
   describe "run_tools/3" do
     test "executes tool calls and appends normalized tool results" do
       turn = %Turn{

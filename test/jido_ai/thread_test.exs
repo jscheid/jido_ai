@@ -5,6 +5,7 @@ defmodule Jido.AI.ContextTest do
 
   alias Jido.AI.Context, as: AIContext
   alias Jido.AI.Context.Entry
+  alias ReqLLM.Message.ContentPart
 
   # ============================================================================
   # Thread Creation
@@ -806,6 +807,102 @@ defmodule Jido.AI.ContextTest do
       }
 
       assert inspect(malformed) == "#Context<unknown entries>"
+    end
+  end
+
+  # ============================================================================
+  # Multimodal Tool Results
+  # ============================================================================
+
+  describe "multimodal tool results" do
+    test "debug_view handles list content without crashing" do
+      parts = [
+        ContentPart.text("Image loaded"),
+        ContentPart.image(<<0xFF, 0xD8>>, "image/jpeg")
+      ]
+
+      context =
+        AIContext.new()
+        |> AIContext.append_user("take screenshot")
+        |> AIContext.append_assistant("", [%{id: "tc_1", name: "view_image", arguments: %{}}])
+        |> AIContext.append_tool_result("tc_1", "view_image", parts)
+
+      debug = AIContext.debug_view(context)
+      assert debug.length == 3
+
+      tool_entry = List.last(debug.entries)
+      assert tool_entry.role == :tool
+      assert is_binary(tool_entry.content)
+    end
+
+    test "pp handles list content without crashing" do
+      parts = [
+        ContentPart.text("Image loaded"),
+        ContentPart.image(<<0xFF, 0xD8>>, "image/jpeg")
+      ]
+
+      context =
+        AIContext.new()
+        |> AIContext.append_user("take screenshot")
+        |> AIContext.append_assistant("", [%{id: "tc_1", name: "view_image", arguments: %{}}])
+        |> AIContext.append_tool_result("tc_1", "view_image", parts)
+
+      assert :ok = AIContext.pp(context)
+    end
+
+    test "entry_to_message passes list content through for tool role" do
+      parts = [
+        ContentPart.text("Image loaded"),
+        ContentPart.image(<<0xFF, 0xD8>>, "image/jpeg")
+      ]
+
+      context =
+        AIContext.new()
+        |> AIContext.append_user("take screenshot")
+        |> AIContext.append_assistant("", [%{id: "tc_1", name: "view_image", arguments: %{}}])
+        |> AIContext.append_tool_result("tc_1", "view_image", parts)
+
+      messages = AIContext.to_messages(context)
+      tool_msg = List.last(messages)
+
+      assert tool_msg.role == :tool
+      assert tool_msg.tool_call_id == "tc_1"
+      assert is_list(tool_msg.content)
+      assert Enum.any?(tool_msg.content, &match?(%ContentPart{type: :image}, &1))
+    end
+
+    test "append_messages normalizes map-based tool content parts to ContentPart structs" do
+      messages = [
+        %{
+          role: :tool,
+          tool_call_id: "tc_1",
+          name: "screenshot",
+          content: [
+            %{"type" => "text", "text" => "Screenshot taken"},
+            %{"type" => "image", "data" => <<0xFF, 0xD8>>, "media_type" => "image/jpeg"}
+          ]
+        }
+      ]
+
+      context = AIContext.new() |> AIContext.append_messages(messages)
+      [entry] = context.entries
+      assert is_list(entry.content)
+      assert [%ContentPart{type: :text}, %ContentPart{type: :image}] = entry.content
+    end
+
+    test "append_messages preserves existing ContentPart structs in tool content" do
+      parts = [
+        ContentPart.text("data"),
+        ContentPart.image(<<0x89, 0x50>>, "image/png")
+      ]
+
+      messages = [
+        %{role: :tool, tool_call_id: "tc_1", name: "tool", content: parts}
+      ]
+
+      context = AIContext.new() |> AIContext.append_messages(messages)
+      [entry] = context.entries
+      assert entry.content == parts
     end
   end
 end

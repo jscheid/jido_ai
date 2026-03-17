@@ -1209,6 +1209,7 @@ defmodule Jido.AI.Reasoning.ReAct.Strategy do
   defp normalize_optional_list(_), do: nil
 
   defp normalize_content(value) when is_binary(value), do: value
+  defp normalize_content([%ReqLLM.Message.ContentPart{} | _] = parts), do: parts
   defp normalize_content(nil), do: ""
   defp normalize_content(value), do: inspect(value)
 

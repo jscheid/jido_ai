@@ -3,6 +3,7 @@ defmodule Jido.AI.Signal.Helpers do
   Shared helpers for signal correlation and standardized error envelopes.
   """
 
+  alias Jido.Action.Result
   alias Jido.Signal
 
   @type error_envelope :: %{
@@ -28,10 +29,16 @@ defmodule Jido.AI.Signal.Helpers do
 
   @doc """
   Ensures result payloads use `{:ok, term, effects}` or `{:error, reason, effects}` tuples.
+
+  When the input is `{:ok, %Jido.Action.Result{}}`, the struct is preserved as
+  the payload and `result.effects` are extracted.
   """
   @spec normalize_result(term(), atom(), String.t()) ::
           {:ok, term(), [term()]} | {:error, term(), [term()]}
   def normalize_result(result, fallback_code \\ :invalid_result, fallback_message \\ "Invalid result envelope")
+
+  def normalize_result({:ok, %Result{effects: effects} = result}, _fallback_code, _fallback_message),
+    do: {:ok, result, List.wrap(effects)}
 
   def normalize_result({:ok, value, effects}, _fallback_code, _fallback_message),
     do: {:ok, value, List.wrap(effects)}
